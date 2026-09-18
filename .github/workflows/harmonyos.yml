@@ -1,0 +1,110 @@
+name: Build cesium-native for HarmonyOS
+
+# Builds cesium-native (and the third-party libraries Cesium for Unreal needs)
+# as static libraries for HarmonyOS (OHOS) arm64, using the OHOS NDK.
+#
+# This workflow is manually triggered (workflow_dispatch) because it depends on
+# a large NDK tarball attached to a Release in this repository
+# (tag: ohos-ndk-26.0.0.38, asset: ohos-ndk-26.0.0.38-win64.tar.gz). The
+# tarball contains the "native" directory of the OHOS SDK 5.0.5.310+ (API 26)
+# Windows NDK, and must be uploaded before the first run.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 330
+
+    env:
+      # Location where the NDK tarball is extracted.
+      OHOS_NDK_HOME: C:\ohos-ndk\native
+      # Use the fake engine root committed to this repo, which contains the
+      # OpenSSL subset (Android ARM64 build, which UE reuses for HarmonyOS)
+      # that the openssl overlay port needs.
+      UNREAL_ENGINE_ROOT: ${{ github.workspace }}\harmonyos\unreal-engine-root
+      # Only build release variants of the vcpkg packages.
+      CESIUM_VCPKG_RELEASE_ONLY: 'TRUE'
+      # Ports and third-party code with old cmake_minimum_required() calls
+      # still work if vcpkg's bundled CMake is 4.x.
+      CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+      # Pin the ezvcpkg base directory (HOME is not set on Windows runners,
+      # which would otherwise resolve to the drive root).
+      EZVCPKG_BASEDIR: C:\ezvcpkg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # extern/cmake-modules (needed by cesium-native's CMake).
+          submodules: recursive
+
+      - name: Download and extract the OHOS NDK
+        run: |
+          $asset = "https://github.com/${{ github.repository }}/releases/download/ohos-ndk-26.0.0.38/ohos-ndk-26.0.0.38-win64.tar.gz"
+          Write-Host "Downloading $asset"
+          curl.exe -L --retry 3 -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o "$env:RUNNER_TEMP\ndk.tar.gz" $asset
+          if ($LASTEXITCODE -ne 0) { throw "NDK download failed" }
+          New-Item -ItemType Directory -Path C:\ohos-ndk -Force | Out-Null
+          tar -xzf "$env:RUNNER_TEMP\ndk.tar.gz" -C C:\ohos-ndk
+          Remove-Item "$env:RUNNER_TEMP\ndk.tar.gz"
+          if (-not (Test-Path "$env:OHOS_NDK_HOME\build\cmake\ohos.toolchain.cmake")) {
+            throw "ohos.toolchain.cmake not found after extraction"
+          }
+          Write-Host "NDK extracted to C:\ohos-ndk"
+
+      - name: Add the NDK's CMake and Ninja to PATH
+        run: |
+          Add-Content $env:GITHUB_PATH "C:\ohos-ndk\native\build-tools\cmake\bin"
+          cmake --version
+
+      - name: Clone third-party dependencies
+        run: |
+          $extern = "${{ github.workspace }}\harmonyos\extern"
+          New-Item -ItemType Directory -Path $extern -Force | Out-Null
+          git clone https://github.com/mmikk/MikkTSpace.git "$extern\MikkTSpace"
+          git -C "$extern\MikkTSpace" -c advice.detachedHead=false checkout 3e895b49d05ea07e4c2133156cfa94369e19e409
+          git clone https://github.com/htacg/tidy-html5 "$extern\tidy-html5"
+          git -C "$extern\tidy-html5" -c advice.detachedHead=false checkout e32922175afec345aef7ceaaaf6c677dc6c6dc12
+          git clone https://github.com/kring/swl-variant.git "$extern\swl-variant"
+          git -C "$extern\swl-variant" -c advice.detachedHead=false checkout 8af20f43129ec66159eecd62a48eafdb7a2f74ca
+
+      - name: Configure
+        run: |
+          cmake -S harmonyos -B harmonyos\build-ohos -G Ninja `
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\harmonyos\unreal-ohos-toolchain.cmake" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON `
+            -DCESIUM_ENABLE_CLANG_TIDY=OFF
+
+      - name: Build and install
+        run: cmake --build harmonyos\build-ohos --target install
+
+      - name: Verify libraries
+        run: |
+          $libDir = "${{ github.workspace }}\harmonyos\install\lib\HarmonyOS-aarch64-Release"
+          $libs = Get-ChildItem $libDir -Filter *.a
+          Write-Host "Static libraries: $($libs.Count)"
+          $libs | ForEach-Object { Write-Host "  $($_.Name)" }
+          if ($libs.Count -lt 130) {
+            throw "Expected at least 130 static libraries (the Android build produces 142), but found $($libs.Count)"
+          }
+          # Verify that C++ code was built against the OHOS libc++ (inline
+          # namespace __n1), not the Android NDK's (__ndk1) or another STL.
+          $nm = "C:\ohos-ndk\native\llvm\bin\llvm-nm.exe"
+          foreach ($lib in @("libCesiumUtility.a", "libspdlog.a")) {
+            $output = & $nm --defined-only "$libDir\$lib" 2>$null | Select-String "__n1"
+            $count = ($output | Measure-Object).Count
+            Write-Host "${lib}: $count symbols containing __n1"
+            if ($count -eq 0) {
+              throw "$lib does not contain OHOS libc++ (__n1) symbols"
+            }
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cesium-native-harmonyos-arm64
+          path: harmonyos/install/
+          if-no-files-found: error

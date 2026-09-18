@@ -1,0 +1,18 @@
+diff --git a/cmake/cputypetest.cmake b/cmake/cputypetest.cmake
+index d839d2d..b2417dd 100644
+--- a/cmake/cputypetest.cmake
++++ b/cmake/cputypetest.cmake
+@@ -73,6 +73,13 @@ function(set_target_processor_type out)
+         set(${out} x86 PARENT_SCOPE)
+     elseif(ANDROID_ABI AND "${ANDROID_ABI}" STREQUAL "x86_64")
+         set(${out} x86_64 PARENT_SCOPE)
++    elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "OHOS")
++        # The fallback below preprocesses cputypetest.c without the
++        # --target flag, so it would detect the architecture of the build
++        # host (e.g. x86_64) instead of the OHOS target. All OHOS targets
++        # supported by this build are arm64, where there is no SSE support:
++        # BASISU_SUPPORT_SSE must be OFF and ASTC must use the NEON ISA.
++        set(${out} arm64 PARENT_SCOPE)
+ 
+     else()
+         if(MSVC) # MSVC is true for all msvc-style compilers, including clang-cl

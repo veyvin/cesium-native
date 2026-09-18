@@ -11,3 +11,10 @@ CMakeSettings.json
 test.db
 .idea
 clang-tidy.log
+
+# HarmonyOS build (harmonyos/CMakeLists.txt)
+harmonyos/extern/
+harmonyos/install/
+harmonyos/*.log
+harmonyos/*.ps1
+

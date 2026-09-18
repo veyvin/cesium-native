@@ -11,12 +11,23 @@ function(configure_cesium_library targetName)
         target_compile_options(${targetName} PRIVATE -Wall -Wextra -Wconversion -Wpedantic -Wshadow -Wsign-conversion -Wno-unknown-pragmas)
     endif()
 
-    set_target_properties(${targetName} PROPERTIES
-        CXX_STANDARD 20
-        CXX_STANDARD_REQUIRED YES
-        CXX_EXTENSIONS NO
-        COMPILE_WARNING_AS_ERROR YES
-    )
+    # Allow ports to new platforms (e.g. HarmonyOS/OHOS) to build even when
+    # the toolchain or system headers trigger warnings that upstream CI has
+    # never seen.
+    if (CESIUM_DISABLE_WARNINGS_AS_ERRORS)
+        set_target_properties(${targetName} PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED YES
+            CXX_EXTENSIONS NO
+        )
+    else()
+        set_target_properties(${targetName} PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED YES
+            CXX_EXTENSIONS NO
+            COMPILE_WARNING_AS_ERROR YES
+        )
+    endif()
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
         # Disable dangling-reference warning due to amount of false positives: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109642

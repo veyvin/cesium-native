@@ -4,6 +4,12 @@ vcpkg_from_github(
     REF "v${VERSION}"
     SHA512 9986aa911b5bd52d5aabe465578a0bd3906fb07b846bace3ebd0c72bd3d021a71abd307c3089674833dc695e87ec4cd136ee67881a38939bc5f42d731253234b
     HEAD_REF master
+    PATCHES
+        # On OHOS (HarmonyOS), cputypetest.cmake's fallback preprocesses
+        # cputypetest.c without the --target flag, detecting the build host
+        # architecture instead of the target. Force arm64 so that
+        # BASISU_SUPPORT_SSE is OFF and ASTC uses the NEON ISA.
+        "ohos-cputypetest.patch"
 )
 file(REMOVE "${SOURCE_PATH}/other_include/zstd_errors.h")
 file(REMOVE_RECURSE "${SOURCE_PATH}/external/basisu/zstd")
@@ -42,6 +48,11 @@ vcpkg_cmake_configure(
         -DKTX_FEATURE_EMBEDDED_ZSTD=OFF
         -DKTX_FEATURE_EMBEDDED_TOOLS_DEPENDENCIES=OFF
         -DLIBKTX_FEATURE_APPLE_FRAMEWORK=OFF
+        # astc-encoder defaults ASTCENC_WERROR to ON; the OHOS toolchain
+        # passes --gcc-toolchain (from CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN),
+        # which clang reports as an unused argument during pure compilation,
+        # turning into a hard error under -Werror.
+        -DASTCENC_WERROR=OFF
         ${FEATURE_OPTIONS}
         ${OPTIONS}
     DISABLE_PARALLEL_CONFIGURE
