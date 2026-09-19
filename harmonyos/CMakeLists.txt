@@ -76,7 +76,9 @@ set(CMAKE_INSTALL_LIBDIR ${CMAKE_INSTALL_PREFIX}/lib/HarmonyOS-aarch64-$<IF:$<CO
 add_compile_definitions(NDEBUG $<$<CONFIG:Debug>:CESIUM_FORCE_ASSERTIONS>)
 
 # Like on Android, Unreal uses hidden visibility on HarmonyOS.
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -fvisibility-inlines-hidden -fno-rtti")
+# Keep RTTI enabled: UE 5.x builds game modules with RTTI (bUseRTTI), and the
+# plugin's dynamic_cast/typeinfo references must resolve against these libs.
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -fvisibility-inlines-hidden")
 
 # vcpkg setup
 set(ENV{VCPKG_OVERLAY_PORTS} "${CMAKE_CURRENT_LIST_DIR}/vcpkg-overlays")
